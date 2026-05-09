@@ -14,9 +14,15 @@ class SmsDeliveredReceiver : BroadcastReceiver() {
         val app = context.applicationContext as SmsGatewayApp
         val messageId = intent.getLongExtra(DeviceSmsGateway.EXTRA_MESSAGE_ID, -1L)
         if (messageId < 0) return
+        val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            app.appContainer.repository.onSmsDelivered(messageId)
+            try {
+                app.appContainer.repository.onSmsDelivered(messageId)
+            } catch (t: Throwable) {
+                android.util.Log.e("SmsDeliveredReceiver", "onSmsDelivered failed", t)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }
-

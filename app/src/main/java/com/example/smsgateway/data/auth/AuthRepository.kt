@@ -6,8 +6,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 
 @Serializable
 private data class TokenResponse(
@@ -19,6 +21,7 @@ class AuthRepository(
     private val sessionStore: SessionStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val emptyJsonBody = "{}".toRequestBody("application/json".toMediaType())
 
     suspend fun ensureJwt(): Result<String> = withContext(Dispatchers.IO) {
         val current = sessionStore.read()
@@ -31,6 +34,7 @@ class AuthRepository(
             val config = sessionStore.read()
             require(config.baseUrl.isNotBlank()) { "Base URL missing" }
             require(config.apiKey.isNotBlank()) { "API key missing" }
+            require(config.apiSecret.isNotBlank()) { "API secret missing" }
 
             val url = config.baseUrl.toHttpUrlOrNull()
                 ?.newBuilder()
@@ -40,8 +44,9 @@ class AuthRepository(
 
             val request = Request.Builder()
                 .url(url)
-                .get()
-                .header("X-API-Key", config.apiKey)
+                .post(emptyJsonBody)
+                .header("X-Api-Key", config.apiKey)
+                .header("X-Api-Secret", config.apiSecret)
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
@@ -55,4 +60,3 @@ class AuthRepository(
         }
     }
 }
-

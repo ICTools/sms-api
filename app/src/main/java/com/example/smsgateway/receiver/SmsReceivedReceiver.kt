@@ -24,6 +24,8 @@ class SmsReceivedReceiver : BroadcastReceiver() {
                         timestamp = sms.timestampMillis,
                     )
                 }
+            } catch (t: Throwable) {
+                android.util.Log.e("SmsReceivedReceiver", "onIncomingSms failed", t)
             } finally {
                 pendingResult.finish()
             }

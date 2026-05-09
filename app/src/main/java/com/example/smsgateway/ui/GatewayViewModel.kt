@@ -7,6 +7,7 @@ import com.example.smsgateway.data.AppContainer
 import com.example.smsgateway.domain.ConnectionState
 import com.example.smsgateway.domain.ConversationSummary
 import com.example.smsgateway.domain.MessageItem
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,7 @@ data class GatewayUiState(
     val composeBody: String = "",
     val baseUrlInput: String = "",
     val apiKeyInput: String = "",
+    val apiSecretInput: String = "",
 )
 
 class GatewayViewModel(
@@ -34,8 +36,9 @@ class GatewayViewModel(
     private val connectionState = MutableStateFlow(appContainer.repository.readConnectionState())
     private val baseUrlInput = MutableStateFlow(appContainer.sessionStore.read().baseUrl)
     private val apiKeyInput = MutableStateFlow(appContainer.sessionStore.read().apiKey)
-    private val connectionInputs = combine(connectionState, baseUrlInput, apiKeyInput) { connection, baseUrl, apiKey ->
-        Triple(connection, baseUrl, apiKey)
+    private val apiSecretInput = MutableStateFlow(appContainer.sessionStore.read().apiSecret)
+    private val connectionInputs = combine(connectionState, baseUrlInput, apiKeyInput, apiSecretInput) { connection, baseUrl, apiKey, apiSecret ->
+        ConnectionInputs(connection, baseUrl, apiKey, apiSecret)
     }
 
     val uiState: StateFlow<GatewayUiState> = combine(
@@ -44,7 +47,10 @@ class GatewayViewModel(
         draftBody,
         connectionInputs,
     ) { conversations, address, body, connectionInputs ->
-        val (connection, baseUrl, apiKey) = connectionInputs
+        val connection = connectionInputs.connection
+        val baseUrl = connectionInputs.baseUrl
+        val apiKey = connectionInputs.apiKey
+        val apiSecret = connectionInputs.apiSecret
         GatewayUiState(
             connection = connection,
             conversations = conversations,
@@ -53,6 +59,7 @@ class GatewayViewModel(
             composeBody = body,
             baseUrlInput = baseUrl,
             apiKeyInput = apiKey,
+            apiSecretInput = apiSecret,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -60,6 +67,7 @@ class GatewayViewModel(
         initialValue = GatewayUiState(),
     )
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val selectedMessages: StateFlow<List<MessageItem>> = selectedAddress
         .flatMapLatest { address ->
             if (address == null) {
@@ -90,9 +98,13 @@ class GatewayViewModel(
         apiKeyInput.value = value
     }
 
+    fun onApiSecretChanged(value: String) {
+        apiSecretInput.value = value
+    }
+
     fun saveConfiguration() {
         viewModelScope.launch {
-            appContainer.repository.saveSettings(baseUrlInput.value, apiKeyInput.value)
+            appContainer.repository.saveSettings(baseUrlInput.value, apiKeyInput.value, apiSecretInput.value)
             appContainer.authRepository.exchangeApiKey()
                 .onSuccess {
                     appContainer.sseClient.disconnect()
@@ -135,3 +147,10 @@ class GatewayViewModel(
         }
     }
 }
+
+private data class ConnectionInputs(
+    val connection: ConnectionState,
+    val baseUrl: String,
+    val apiKey: String,
+    val apiSecret: String,
+)

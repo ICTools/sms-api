@@ -16,7 +16,7 @@ data class RemoteMessageDto(
 data class IncomingMessageRequest(
     @SerialName("phoneNumber") val phoneNumber: String,
     @SerialName("body") val body: String,
-    @SerialName("receivedAt") val receivedAt: String,
+    @SerialName("sentAt") val sentAt: String,
     @SerialName("deviceMessageId") val deviceMessageId: Long? = null,
 )
 

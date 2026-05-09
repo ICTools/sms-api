@@ -14,13 +14,20 @@ class SmsSentReceiver : BroadcastReceiver() {
         val app = context.applicationContext as SmsGatewayApp
         val messageId = intent.getLongExtra(DeviceSmsGateway.EXTRA_MESSAGE_ID, -1L)
         if (messageId < 0) return
+        val pendingResult = goAsync()
+        val resultCode = this.resultCode
         CoroutineScope(Dispatchers.IO).launch {
-            app.appContainer.repository.onSmsSent(
-                messageId = messageId,
-                success = resultCode == android.app.Activity.RESULT_OK,
-                error = if (resultCode == android.app.Activity.RESULT_OK) null else "SMS send error code: $resultCode",
-            )
+            try {
+                app.appContainer.repository.onSmsSent(
+                    messageId = messageId,
+                    success = resultCode == android.app.Activity.RESULT_OK,
+                    error = if (resultCode == android.app.Activity.RESULT_OK) null else "SMS send error code: $resultCode",
+                )
+            } catch (t: Throwable) {
+                android.util.Log.e("SmsSentReceiver", "onSmsSent failed", t)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }
-

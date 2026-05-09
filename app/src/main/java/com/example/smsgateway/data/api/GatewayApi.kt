@@ -12,6 +12,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+class HttpException(val code: Int, message: String) : RuntimeException(message)
+
 class GatewayApi(
     private val okHttpClient: OkHttpClient,
     private val sessionStore: SessionStore,
@@ -27,7 +29,7 @@ class GatewayApi(
             .build()
         val request = Request.Builder().url(url).get().authorized().build()
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Fetch failed: ${response.code}")
+            if (!response.isSuccessful) throw HttpException(response.code, "Fetch failed: ${response.code}")
             json.decodeFromString<RemoteMessageDto>(response.body?.string().orEmpty())
         }
     }
@@ -39,8 +41,7 @@ class GatewayApi(
             .authorized()
             .build()
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Push failed: ${response.code}")
-            Unit
+            if (!response.isSuccessful) throw HttpException(response.code, "Push failed: ${response.code}")
         }
     }
 
@@ -51,8 +52,7 @@ class GatewayApi(
             .authorized()
             .build()
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Outgoing push failed: ${response.code}")
-            Unit
+            if (!response.isSuccessful) throw HttpException(response.code, "Outgoing push failed: ${response.code}")
         }
     }
 
@@ -63,8 +63,7 @@ class GatewayApi(
             .authorized()
             .build()
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Status update failed: ${response.code}")
-            Unit
+            if (!response.isSuccessful) throw HttpException(response.code, "Status update failed: ${response.code}")
         }
     }
 
@@ -77,17 +76,15 @@ class GatewayApi(
             ?.build()
     }
 
-    private suspend fun <T> withAuthorizedCall(block: suspend () -> T): Result<T> {
-        authRepository.ensureJwt().getOrElse { return Result.failure(it) }
-        return try {
-            Result.success(block())
-        } catch (error: Throwable) {
-            if (error.message?.contains("401") == true) {
+    private suspend fun <T> withAuthorizedCall(block: suspend () -> T): Result<T> = withContext(Dispatchers.IO) {
+        authRepository.ensureJwt().getOrElse { return@withContext Result.failure(it) }
+        runCatching { block() }.recoverCatching { error ->
+            if (error is HttpException && error.code == 401) {
                 sessionStore.clearJwt()
-                authRepository.exchangeApiKey().getOrElse { return Result.failure(it) }
-                Result.success(block())
+                authRepository.exchangeApiKey().getOrThrow()
+                block()
             } else {
-                Result.failure(error)
+                throw error
             }
         }
     }

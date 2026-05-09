@@ -1,6 +1,7 @@
 package com.example.smsgateway.worker
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.smsgateway.SmsGatewayApp
@@ -14,13 +15,15 @@ class SyncPendingMessagesWorker(
         return runCatching {
             repository.syncPendingActions()
             Result.success()
-        }.getOrElse {
-            Result.retry()
+        }.getOrElse { error ->
+            android.util.Log.w("SyncWorker", "Sync failed: ${error.message}")
+            if (runAttemptCount >= MAX_ATTEMPTS) Result.failure() else Result.retry()
         }
     }
 
     companion object {
         const val UNIQUE_WORK_NAME = "sync_pending_messages"
+        const val MAX_ATTEMPTS = 8
+        val BACKOFF_POLICY = BackoffPolicy.EXPONENTIAL
     }
 }
-

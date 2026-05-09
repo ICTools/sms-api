@@ -3,6 +3,7 @@ package com.example.smsgateway.data
 import android.content.Context
 import androidx.room.Room
 import androidx.work.WorkManager
+import com.example.smsgateway.BuildConfig
 import com.example.smsgateway.data.api.GatewayApi
 import com.example.smsgateway.data.auth.AuthRepository
 import com.example.smsgateway.data.auth.SessionStore
@@ -11,6 +12,7 @@ import com.example.smsgateway.data.repository.MessageRepository
 import com.example.smsgateway.data.sse.MercureSseClient
 import com.example.smsgateway.sms.DeviceSmsGateway
 import com.example.smsgateway.worker.SyncScheduler
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 
@@ -19,7 +21,18 @@ class AppContainer(context: Context) {
     val sessionStore = SessionStore(appContext)
 
     private val baseClient = OkHttpClient.Builder()
-        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .apply {
+            if (BuildConfig.DEBUG) {
+                addInterceptor(
+                    HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC },
+                )
+            }
+        }
         .build()
 
     val database: GatewayDatabase = Room.databaseBuilder(

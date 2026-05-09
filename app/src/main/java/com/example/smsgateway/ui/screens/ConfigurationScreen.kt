@@ -51,6 +51,12 @@ fun ConfigurationScreen(
                     label = { Text("API key") },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedTextField(
+                    value = state.apiSecretInput,
+                    onValueChange = viewModel::onApiSecretChanged,
+                    label = { Text("API secret") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Button(onClick = viewModel::saveConfiguration) {
                     Text("Enregistrer")
                 }
@@ -65,10 +71,10 @@ fun ConfigurationScreen(
             ) {
                 Text("JWT présent: ${state.connection.hasJwt}")
                 Text("API key présente: ${state.connection.hasApiKey}")
+                Text("API secret présent: ${state.connection.hasApiSecret}")
                 Text("SSE connectée: ${state.connection.isSseConnected}")
                 state.connection.lastError?.let { Text("Erreur: $it") }
             }
         }
     }
 }
-

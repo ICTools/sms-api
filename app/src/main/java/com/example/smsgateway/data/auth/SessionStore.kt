@@ -9,6 +9,7 @@ import com.example.smsgateway.BuildConfig
 data class ServerConfig(
     val baseUrl: String = BuildConfig.DEFAULT_BASE_URL,
     val apiKey: String = "",
+    val apiSecret: String = "",
     val jwt: String = "",
 )
 
@@ -24,6 +25,7 @@ class SessionStore(context: Context) {
     fun read(): ServerConfig = ServerConfig(
         baseUrl = prefs.getString(KEY_BASE_URL, BuildConfig.DEFAULT_BASE_URL).orEmpty(),
         apiKey = prefs.getString(KEY_API_KEY, "").orEmpty(),
+        apiSecret = prefs.getString(KEY_API_SECRET, "").orEmpty(),
         jwt = prefs.getString(KEY_JWT, "").orEmpty(),
     )
 
@@ -33,6 +35,10 @@ class SessionStore(context: Context) {
 
     fun saveApiKey(apiKey: String) {
         prefs.edit { putString(KEY_API_KEY, apiKey.trim()) }
+    }
+
+    fun saveApiSecret(apiSecret: String) {
+        prefs.edit { putString(KEY_API_SECRET, apiSecret.trim()) }
     }
 
     fun saveJwt(jwt: String) {
@@ -46,7 +52,7 @@ class SessionStore(context: Context) {
     companion object {
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_API_KEY = "api_key"
+        private const val KEY_API_SECRET = "api_secret"
         private const val KEY_JWT = "jwt"
     }
 }
-

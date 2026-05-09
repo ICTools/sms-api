@@ -1,9 +1,13 @@
 package com.example.smsgateway.data.repository
 
 import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 import com.example.smsgateway.data.api.GatewayApi
 import com.example.smsgateway.data.api.IncomingMessageRequest
 import com.example.smsgateway.data.api.MessageStatusRequest
@@ -66,15 +70,17 @@ class MessageRepository(
         return ConnectionState(
             baseUrl = config.baseUrl,
             hasApiKey = config.apiKey.isNotBlank(),
+            hasApiSecret = config.apiSecret.isNotBlank(),
             hasJwt = config.jwt.isNotBlank(),
             isSseConnected = isSseConnected,
             lastError = lastError,
         )
     }
 
-    suspend fun saveSettings(baseUrl: String, apiKey: String) {
+    suspend fun saveSettings(baseUrl: String, apiKey: String, apiSecret: String) {
         sessionStore.saveBaseUrl(baseUrl)
         sessionStore.saveApiKey(apiKey)
+        sessionStore.saveApiSecret(apiSecret)
         sessionStore.clearJwt()
     }
 
@@ -116,7 +122,7 @@ class MessageRepository(
                     IncomingMessageRequest(
                         phoneNumber = address,
                         body = body,
-                        receivedAt = Instant.ofEpochMilli(timestamp).toString(),
+                        sentAt = Instant.ofEpochMilli(timestamp).toString(),
                         deviceMessageId = deviceMessageId,
                     ),
                 ),
@@ -187,6 +193,9 @@ class MessageRepository(
         )
         database.messageDao().update(updated)
         if (updated.ulid != null) {
+            if (success && message.smsStatus != "sent" && message.smsStatus != "delivered") {
+                queueOutgoingMessage(updated)
+            }
             queueStatusUpdate(updated, if (success) "sent" else "failed")
         }
     }
@@ -203,6 +212,15 @@ class MessageRepository(
     suspend fun syncPendingActions() {
         val actions = database.pendingActionDao().getAll()
         actions.forEach { action ->
+            if (action.retryCount >= MAX_RETRIES) {
+                android.util.Log.w(
+                    "MessageRepository",
+                    "Dropping action ${action.id} (type=${action.type}) after ${action.retryCount} retries",
+                )
+                database.pendingActionDao().deleteById(action.id)
+                return@forEach
+            }
+
             val result = when (action.type) {
                 "push_incoming" -> {
                     val payload = json.decodeFromString<IncomingMessageRequest>(action.payload)
@@ -227,6 +245,10 @@ class MessageRepository(
         }
     }
 
+    companion object {
+        const val MAX_RETRIES = 10
+    }
+
     private suspend fun queueStatusUpdate(message: MessageEntity, status: String) {
         database.pendingActionDao().insert(
             PendingActionEntity(
@@ -248,6 +270,26 @@ class MessageRepository(
         enqueueSync()
     }
 
+    private suspend fun queueOutgoingMessage(message: MessageEntity) {
+        database.pendingActionDao().insert(
+            PendingActionEntity(
+                type = "push_outgoing",
+                messageId = message.id,
+                ulid = message.ulid,
+                payload = json.encodeToString(
+                    OutgoingMessageRequest(
+                        phoneNumber = message.address,
+                        body = message.body,
+                        createdAt = Instant.ofEpochMilli(message.timestamp).toString(),
+                        deviceMessageId = message.deviceMessageId ?: message.id,
+                    ),
+                ),
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        enqueueSync()
+    }
+
     private suspend fun upsertMessage(entity: MessageEntity): Long {
         val inserted = database.messageDao().insert(entity)
         val finalId = if (inserted == -1L) {
@@ -255,22 +297,21 @@ class MessageRepository(
                 entity.ulid != null -> database.messageDao().getByUlid(entity.ulid)
                 entity.deviceMessageId != null -> database.messageDao().getByDeviceMessageId(entity.deviceMessageId)
                 else -> null
-            }
-            if (existing != null) {
-                database.messageDao().update(
-                    existing.copy(
-                        ulid = entity.ulid ?: existing.ulid,
-                        body = entity.body,
-                        smsStatus = entity.smsStatus,
-                        syncStatus = entity.syncStatus,
-                        errorMessage = entity.errorMessage,
-                        timestamp = entity.timestamp,
-                    ),
-                )
-                existing.id
-            } else {
-                inserted
-            }
+            } ?: error(
+                "Insert conflict without resolvable existing row (ulid=${entity.ulid}, " +
+                    "deviceMessageId=${entity.deviceMessageId})",
+            )
+            database.messageDao().update(
+                existing.copy(
+                    ulid = entity.ulid ?: existing.ulid,
+                    body = entity.body,
+                    smsStatus = entity.smsStatus,
+                    syncStatus = entity.syncStatus,
+                    errorMessage = entity.errorMessage,
+                    timestamp = entity.timestamp,
+                ),
+            )
+            existing.id
         } else {
             inserted
         }
@@ -286,10 +327,18 @@ class MessageRepository(
     }
 
     private fun enqueueSync() {
+        val request = OneTimeWorkRequestBuilder<SyncPendingMessagesWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
         workManager.enqueueUniqueWork(
             SyncPendingMessagesWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
-            OneTimeWorkRequestBuilder<SyncPendingMessagesWorker>().build(),
+            request,
         )
     }
 }

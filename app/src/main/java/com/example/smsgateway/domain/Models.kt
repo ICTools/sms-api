@@ -20,8 +20,8 @@ data class MessageItem(
 data class ConnectionState(
     val baseUrl: String = "",
     val hasApiKey: Boolean = false,
+    val hasApiSecret: Boolean = false,
     val hasJwt: Boolean = false,
     val isSseConnected: Boolean = false,
     val lastError: String? = null,
 )
-
