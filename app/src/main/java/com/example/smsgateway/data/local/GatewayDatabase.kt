@@ -2,6 +2,7 @@ package com.example.smsgateway.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import com.example.smsgateway.data.local.dao.ConversationDao
 import com.example.smsgateway.data.local.dao.MessageDao
 import com.example.smsgateway.data.local.dao.PendingActionDao
@@ -18,5 +19,9 @@ abstract class GatewayDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
     abstract fun pendingActionDao(): PendingActionDao
+
+    companion object {
+        val MIGRATIONS: Array<Migration> = emptyArray()
+    }
 }
 

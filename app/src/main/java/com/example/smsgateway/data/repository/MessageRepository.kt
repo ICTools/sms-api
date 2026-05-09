@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import com.example.smsgateway.data.api.GatewayApi
+import com.example.smsgateway.data.api.HttpException
 import com.example.smsgateway.data.api.IncomingMessageRequest
 import com.example.smsgateway.data.api.MessageStatusRequest
 import com.example.smsgateway.data.api.OutgoingMessageRequest
@@ -17,7 +18,6 @@ import com.example.smsgateway.data.local.GatewayDatabase
 import com.example.smsgateway.data.local.entity.ConversationEntity
 import com.example.smsgateway.data.local.entity.MessageEntity
 import com.example.smsgateway.data.local.entity.PendingActionEntity
-import com.example.smsgateway.domain.ConnectionState
 import com.example.smsgateway.domain.ConversationSummary
 import com.example.smsgateway.domain.MessageItem
 import com.example.smsgateway.sms.DeviceSmsGateway
@@ -65,17 +65,8 @@ class MessageRepository(
             }
         }
 
-    fun readConnectionState(isSseConnected: Boolean = false, lastError: String? = null): ConnectionState {
-        val config = sessionStore.read()
-        return ConnectionState(
-            baseUrl = config.baseUrl,
-            hasApiKey = config.apiKey.isNotBlank(),
-            hasApiSecret = config.apiSecret.isNotBlank(),
-            hasJwt = config.jwt.isNotBlank(),
-            isSseConnected = isSseConnected,
-            lastError = lastError,
-        )
-    }
+    fun observePendingActionCount(): Flow<Int> =
+        database.pendingActionDao().observeCount()
 
     suspend fun saveSettings(baseUrl: String, apiKey: String, apiSecret: String) {
         sessionStore.saveBaseUrl(baseUrl)
@@ -177,9 +168,11 @@ class MessageRepository(
                     source = "server",
                     timestamp = System.currentTimeMillis(),
                     smsStatus = "accepted_local",
-                    syncStatus = "synced",
+                    syncStatus = "pending_status",
                 ),
             )
+            val stored = database.messageDao().getById(messageId)
+            if (stored != null) queueStatusUpdate(stored, "accepted")
             smsGateway.sendText(messageId, remote.phoneNumber, remote.body)
         }
     }
@@ -237,16 +230,28 @@ class MessageRepository(
                 else -> Result.failure(IllegalArgumentException("Unknown action type ${action.type}"))
             }
 
-            if (result.isSuccess) {
-                database.pendingActionDao().deleteById(action.id)
-            } else {
-                database.pendingActionDao().update(action.copy(retryCount = action.retryCount + 1))
+            when {
+                result.isSuccess -> database.pendingActionDao().deleteById(action.id)
+                isFatalClientError(result.exceptionOrNull()) -> {
+                    android.util.Log.w(
+                        "MessageRepository",
+                        "Dropping action ${action.id} on fatal client error: ${result.exceptionOrNull()?.message}",
+                    )
+                    database.pendingActionDao().deleteById(action.id)
+                }
+                else -> database.pendingActionDao().update(action.copy(retryCount = action.retryCount + 1))
             }
         }
     }
 
+    private fun isFatalClientError(error: Throwable?): Boolean {
+        val http = error as? HttpException ?: return false
+        return http.code in 400..499 && http.code !in retriableClientCodes
+    }
+
     companion object {
         const val MAX_RETRIES = 10
+        private val retriableClientCodes = setOf(401, 408, 425, 429)
     }
 
     private suspend fun queueStatusUpdate(message: MessageEntity, status: String) {

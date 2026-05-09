@@ -5,11 +5,15 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.example.smsgateway.data.local.entity.PendingActionEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PendingActionDao {
     @Query("SELECT * FROM pending_actions ORDER BY createdAt ASC")
     suspend fun getAll(): List<PendingActionEntity>
+
+    @Query("SELECT COUNT(*) FROM pending_actions")
+    fun observeCount(): Flow<Int>
 
     @Insert
     suspend fun insert(action: PendingActionEntity)
