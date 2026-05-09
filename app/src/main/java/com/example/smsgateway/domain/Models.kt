@@ -22,6 +22,9 @@ data class ConnectionState(
     val hasApiKey: Boolean = false,
     val hasApiSecret: Boolean = false,
     val hasJwt: Boolean = false,
-    val isSseConnected: Boolean = false,
+    val sseState: SseState = SseState.Idle,
+    val pendingActionCount: Int = 0,
     val lastError: String? = null,
-)
+) {
+    val isSseConnected: Boolean get() = sseState.isConnected
+}

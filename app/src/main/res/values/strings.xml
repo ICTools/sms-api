@@ -1,9 +1,18 @@
 <resources>
     <string name="app_name">SMS Gateway</string>
     <string name="notification_channel_name">SMS Gateway Sync</string>
+    <string name="notification_channel_description">Notification persistante du service de synchronisation SMS</string>
     <string name="notification_text">Synchronisation SMS active</string>
     <string name="config_title">Configuration serveur</string>
     <string name="conversations_title">Conversations</string>
     <string name="messages_title">Messages</string>
+    <string name="sse_state_idle">Inactif</string>
+    <string name="sse_state_disabled">Configuration manquante</string>
+    <string name="sse_state_waiting_network">En attente du réseau</string>
+    <string name="sse_state_connecting">Connexion…</string>
+    <string name="sse_state_connected">Connectée</string>
+    <string name="sse_state_reauthenticating">Réauthentification…</string>
+    <string name="sse_state_reconnecting">Reconnexion (tentative %1$d)</string>
+    <string name="permissions_denied">Permissions SMS refusées — l\'app ne peut pas envoyer ni recevoir</string>
 </resources>
 

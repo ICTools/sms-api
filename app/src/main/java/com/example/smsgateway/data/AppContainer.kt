@@ -39,7 +39,10 @@ class AppContainer(context: Context) {
         appContext,
         GatewayDatabase::class.java,
         "sms-gateway.db",
-    ).fallbackToDestructiveMigration().build()
+    )
+        .addMigrations(*GatewayDatabase.MIGRATIONS)
+        .fallbackToDestructiveMigrationOnDowngrade()
+        .build()
 
     val authRepository = AuthRepository(baseClient, sessionStore)
     val api = GatewayApi(baseClient, sessionStore, authRepository)
@@ -55,6 +58,7 @@ class AppContainer(context: Context) {
         context = appContext,
         okHttpClient = baseClient,
         sessionStore = sessionStore,
+        authRepository = authRepository,
         repository = repository,
     )
     val syncScheduler = SyncScheduler(WorkManager.getInstance(appContext))
