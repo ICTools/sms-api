@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<full-backup-content />
-
+<full-backup-content>
+    <exclude domain="sharedpref" path="gateway_session.xml" />
+    <exclude domain="sharedpref" path="gateway_session.xml.bak" />
+    <exclude domain="database" path="sms-gateway.db" />
+</full-backup-content>

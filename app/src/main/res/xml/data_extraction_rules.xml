@@ -1,3 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<data-extraction-rules />
-
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="gateway_session.xml" />
+        <exclude domain="database" path="sms-gateway.db" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="gateway_session.xml" />
+        <exclude domain="database" path="sms-gateway.db" />
+    </device-transfer>
+</data-extraction-rules>

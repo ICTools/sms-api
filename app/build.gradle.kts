@@ -23,13 +23,44 @@ android {
         buildConfigField("String", "DEFAULT_BASE_URL", "\"https://example.invalid\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = providers.gradleProperty("SMS_GATEWAY_KEYSTORE")
+                .orElse(providers.environmentVariable("SMS_GATEWAY_KEYSTORE"))
+                .orNull
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = providers.gradleProperty("SMS_GATEWAY_KEYSTORE_PASSWORD")
+                    .orElse(providers.environmentVariable("SMS_GATEWAY_KEYSTORE_PASSWORD"))
+                    .orNull
+                keyAlias = providers.gradleProperty("SMS_GATEWAY_KEY_ALIAS")
+                    .orElse(providers.environmentVariable("SMS_GATEWAY_KEY_ALIAS"))
+                    .orNull
+                keyPassword = providers.gradleProperty("SMS_GATEWAY_KEY_PASSWORD")
+                    .orElse(providers.environmentVariable("SMS_GATEWAY_KEY_PASSWORD"))
+                    .orNull
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null) {
+                releaseSigning
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+        debug {
+            isMinifyEnabled = false
+            isDebuggable = true
         }
     }
 
