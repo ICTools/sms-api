@@ -4,16 +4,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.smsgateway.data.AppContainer
+import com.example.smsgateway.data.auth.ServerConfig
 import com.example.smsgateway.domain.ConnectionState
 import com.example.smsgateway.domain.ConversationSummary
 import com.example.smsgateway.domain.MessageItem
+import com.example.smsgateway.domain.SseState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -21,11 +25,11 @@ data class GatewayUiState(
     val connection: ConnectionState = ConnectionState(),
     val conversations: List<ConversationSummary> = emptyList(),
     val selectedAddress: String? = null,
-    val messages: List<MessageItem> = emptyList(),
     val composeBody: String = "",
     val baseUrlInput: String = "",
     val apiKeyInput: String = "",
     val apiSecretInput: String = "",
+    val permissionsDenied: Boolean = false,
 )
 
 class GatewayViewModel(
@@ -33,33 +37,52 @@ class GatewayViewModel(
 ) : ViewModel() {
     private val selectedAddress = MutableStateFlow<String?>(null)
     private val draftBody = MutableStateFlow("")
-    private val connectionState = MutableStateFlow(appContainer.repository.readConnectionState())
-    private val baseUrlInput = MutableStateFlow(appContainer.sessionStore.read().baseUrl)
-    private val apiKeyInput = MutableStateFlow(appContainer.sessionStore.read().apiKey)
-    private val apiSecretInput = MutableStateFlow(appContainer.sessionStore.read().apiSecret)
-    private val connectionInputs = combine(connectionState, baseUrlInput, apiKeyInput, apiSecretInput) { connection, baseUrl, apiKey, apiSecret ->
-        ConnectionInputs(connection, baseUrl, apiKey, apiSecret)
-    }
+    private val configRefresh = MutableStateFlow(0L)
+    private val lastError = MutableStateFlow<String?>(null)
+    private val permissionsDenied = MutableStateFlow(false)
+
+    private val initialConfig = appContainer.sessionStore.read()
+    private val baseUrlInput = MutableStateFlow(initialConfig.baseUrl)
+    private val apiKeyInput = MutableStateFlow(initialConfig.apiKey)
+    private val apiSecretInput = MutableStateFlow(initialConfig.apiSecret)
+
+    private val configFlow: Flow<ServerConfig> = configRefresh.map { appContainer.sessionStore.read() }
+
+    private val connectionStateFlow: StateFlow<ConnectionState> = combine(
+        configFlow,
+        appContainer.sseClient.state,
+        appContainer.repository.observePendingActionCount(),
+        lastError,
+    ) { config, sseState, pending, error ->
+        ConnectionState(
+            baseUrl = config.baseUrl,
+            hasApiKey = config.apiKey.isNotBlank(),
+            hasApiSecret = config.apiSecret.isNotBlank(),
+            hasJwt = config.jwt.isNotBlank(),
+            sseState = sseState,
+            pendingActionCount = pending,
+            lastError = error,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ConnectionState())
 
     val uiState: StateFlow<GatewayUiState> = combine(
         appContainer.repository.observeConversations(),
         selectedAddress,
         draftBody,
-        connectionInputs,
-    ) { conversations, address, body, connectionInputs ->
-        val connection = connectionInputs.connection
-        val baseUrl = connectionInputs.baseUrl
-        val apiKey = connectionInputs.apiKey
-        val apiSecret = connectionInputs.apiSecret
+        connectionStateFlow,
+        combine(baseUrlInput, apiKeyInput, apiSecretInput, permissionsDenied) { baseUrl, apiKey, apiSecret, denied ->
+            InputBundle(baseUrl, apiKey, apiSecret, denied)
+        },
+    ) { conversations, address, body, connection, inputs ->
         GatewayUiState(
             connection = connection,
             conversations = conversations,
             selectedAddress = address,
-            messages = emptyList(),
             composeBody = body,
-            baseUrlInput = baseUrl,
-            apiKeyInput = apiKey,
-            apiSecretInput = apiSecret,
+            baseUrlInput = inputs.baseUrl,
+            apiKeyInput = inputs.apiKey,
+            apiSecretInput = inputs.apiSecret,
+            permissionsDenied = inputs.permissionsDenied,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -70,11 +93,7 @@ class GatewayViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     val selectedMessages: StateFlow<List<MessageItem>> = selectedAddress
         .flatMapLatest { address ->
-            if (address == null) {
-                flowOf(emptyList())
-            } else {
-                appContainer.repository.observeMessages(address)
-            }
+            if (address == null) flowOf(emptyList()) else appContainer.repository.observeMessages(address)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -85,55 +104,41 @@ class GatewayViewModel(
     }
 
     fun onPermissionsResult(results: Map<String, Boolean>) {
-        if (results.values.any { !it }) {
-            connectionState.value = connectionState.value.copy(lastError = "Certaines permissions sont refusées")
-        }
+        permissionsDenied.value = results.values.any { !it }
     }
 
-    fun onBaseUrlChanged(value: String) {
-        baseUrlInput.value = value
-    }
-
-    fun onApiKeyChanged(value: String) {
-        apiKeyInput.value = value
-    }
-
-    fun onApiSecretChanged(value: String) {
-        apiSecretInput.value = value
-    }
+    fun onBaseUrlChanged(value: String) { baseUrlInput.value = value }
+    fun onApiKeyChanged(value: String) { apiKeyInput.value = value }
+    fun onApiSecretChanged(value: String) { apiSecretInput.value = value }
 
     fun saveConfiguration() {
         viewModelScope.launch {
             appContainer.repository.saveSettings(baseUrlInput.value, apiKeyInput.value, apiSecretInput.value)
+            configRefresh.value = System.currentTimeMillis()
             appContainer.authRepository.exchangeApiKey()
                 .onSuccess {
-                    appContainer.sseClient.disconnect()
-                    appContainer.sseClient.connect()
-                    connectionState.value = appContainer.repository.readConnectionState(isSseConnected = true)
+                    lastError.value = null
+                    configRefresh.value = System.currentTimeMillis()
+                    appContainer.sseClient.forceReconnect()
                 }
-                .onFailure {
-                    connectionState.value = appContainer.repository.readConnectionState(
-                        isSseConnected = false,
-                        lastError = it.message,
-                    )
-                }
+                .onFailure { lastError.value = it.message }
         }
     }
 
-    fun selectConversation(address: String) {
-        selectedAddress.value = address
+    fun reconnectSse() {
+        appContainer.sseClient.forceReconnect()
     }
 
-    fun updateDraft(value: String) {
-        draftBody.value = value
-    }
+    fun selectConversation(address: String) { selectedAddress.value = address }
+    fun updateDraft(value: String) { draftBody.value = value }
 
     fun sendCurrentDraft() {
         val address = selectedAddress.value ?: return
         val body = draftBody.value.trim()
         if (body.isBlank()) return
         viewModelScope.launch {
-            appContainer.repository.sendFromPhone(address, body)
+            runCatching { appContainer.repository.sendFromPhone(address, body) }
+                .onFailure { lastError.value = it.message }
             draftBody.value = ""
         }
     }
@@ -148,9 +153,9 @@ class GatewayViewModel(
     }
 }
 
-private data class ConnectionInputs(
-    val connection: ConnectionState,
+private data class InputBundle(
     val baseUrl: String,
     val apiKey: String,
     val apiSecret: String,
+    val permissionsDenied: Boolean,
 )
