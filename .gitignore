@@ -5,4 +5,7 @@
 /build/
 /app/build/
 /captures/
+/keystore/
+*.keystore
+*.jks
 
