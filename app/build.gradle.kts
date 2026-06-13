@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.smsgateway"
+    namespace = "be.ictools.smsgateway"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.smsgateway"
+        applicationId = "be.ictools.smsgateway"
         minSdk = 29
         targetSdk = 34
         versionCode = 1

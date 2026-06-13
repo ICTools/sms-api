@@ -77,7 +77,7 @@ perte des données locales (Room DB et préférences chiffrées conservées).
 ## Désinstallation propre
 
 ```bash
-adb uninstall com.example.smsgateway
+adb uninstall be.ictools.smsgateway
 ```
 
 Cela efface la base SMS et la session API stockée.
