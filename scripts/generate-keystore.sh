@@ -8,6 +8,28 @@
 
 set -euo pipefail
 
+resolve_jdk() {
+    if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/keytool" ]]; then
+        return
+    fi
+    local candidate
+    for candidate in \
+        /snap/android-studio/current/jbr \
+        $(ls -d /snap/android-studio/*/jbr 2>/dev/null | sort -rV) \
+        /usr/lib/jvm/default-java \
+        $(ls -d /usr/lib/jvm/java-*-openjdk* 2>/dev/null | sort -rV)
+    do
+        if [[ -x "$candidate/bin/keytool" ]]; then
+            export JAVA_HOME="$candidate"
+            export PATH="$JAVA_HOME/bin:$PATH"
+            return
+        fi
+    done
+    echo "ERROR: keytool not found. Install a JDK (apt install default-jdk) or set JAVA_HOME." >&2
+    exit 1
+}
+resolve_jdk
+
 KEYSTORE="${1:-$(pwd)/keystore/sms-gateway.keystore}"
 ALIAS="${2:-sms-gateway}"
 
