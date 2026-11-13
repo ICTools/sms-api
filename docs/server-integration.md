@@ -66,10 +66,48 @@ Les endpoints attendus côté backend sont :
 - `POST /api/mobile/outgoing-sms`
 - `POST /api/mobile/messages/{ulid}/status`
 - `GET /api/mobile/messages/{ulid}`
+- `POST /api/mobile/heartbeat` (voir [Heartbeat](#heartbeat))
 
 Le contrôleur serveur mentionné est :
 
 - `src/Controller/Api/MobileSmsController.php`
+
+## Heartbeat
+
+Le service de la passerelle envoie un heartbeat au démarrage puis toutes les
+**4 minutes** (`HeartbeatReporter.INTERVAL_MS`). Côté serveur
+(ICTools/chapitreneuf#936), l'alerte e-mail « Passerelle SMS hors ligne » part
+quand le dernier heartbeat a plus de `SMS_GATEWAY_OFFLINE_THRESHOLD_MINUTES`
+(10 par défaut) ou quand plus personne n'est abonné au topic Mercure
+`sms/outgoing`. Le serveur attend une cadence de 2 à 5 minutes.
+
+**Clé API au scope `sms_gateway` obligatoire.** La route refuse tous les autres
+scopes avec `403`, y compris `global` (qui garde son accès transitoire aux
+autres routes `/api/mobile`). Avec une clé `global`, les SMS passent mais le
+heartbeat échoue : l'écran de configuration affiche alors
+`Heartbeat: échec … (403 : la clé API n'a pas le scope sms_gateway)`.
+
+```http
+POST /api/mobile/heartbeat
+Authorization: Bearer <jwt>
+Content-Type: application/json
+
+{
+  "batteryLevel": 87,
+  "charging": true,
+  "network": "wifi",
+  "appVersion": "1.0"
+}
+```
+
+Tous les champs sont facultatifs (`null` quand l'info manque) :
+
+- `batteryLevel` : 0-100
+- `charging` : en charge ou batterie pleine sur secteur
+- `network` : `wifi`, `cellular`, `ethernet`, `other` ou `none`
+- `appVersion` : `versionName` de l'APK
+
+Réponse : `{"success": true, "serverTime": "…"}`.
 
 ## Contrat des payloads
 
@@ -173,7 +211,7 @@ pour obtenir son JWT.
 ## Conditions nécessaires pour que l'app fonctionne
 
 - une `Base URL` joignable depuis le téléphone
-- une paire `api key` / `api secret` valide
+- une paire `api key` / `api secret` valide, au scope `sms_gateway` (heartbeat)
 - l'endpoint `POST /api/authentication_token`
 - les endpoints `/api/mobile/...`
 - Mercure accessible sur `/.well-known/mercure`

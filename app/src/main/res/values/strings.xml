@@ -13,6 +13,13 @@
     <string name="sse_state_connected">Connectée</string>
     <string name="sse_state_reauthenticating">Réauthentification…</string>
     <string name="sse_state_reconnecting">Reconnexion (tentative %1$d)</string>
+    <string name="secret_configured">Secret configuré ✓</string>
+    <string name="secret_configured_keep">Secret configuré ✓ — laisser vide pour le garder, ou saisir un nouveau secret pour le remplacer</string>
+    <string name="unlock_title">Déverrouiller pour modifier la configuration</string>
+    <string name="reset_explanation">La clé API, le secret et le jeton de session seront effacés de ce téléphone. La passerelle reste arrêtée jusqu\'à une nouvelle configuration.</string>
+    <string name="battery_optimization_title">Laisser la passerelle tourner en continu</string>
+    <string name="battery_optimization_explanation">Ce téléphone sert de passerelle SMS : il doit rester connecté au serveur jour et nuit. L\'optimisation de batterie d\'Android coupe la connexion quand l\'écran est éteint et empêche la relance automatique du service. Autorisez l\'appli à ignorer l\'optimisation de batterie.</string>
+    <string name="battery_optimization_warning">Optimisation de batterie active : la passerelle peut être coupée écran éteint et ne pas redémarrer seule.</string>
     <string name="permissions_denied">Permissions SMS refusées — l\'app ne peut pas envoyer ni recevoir</string>
 </resources>
 

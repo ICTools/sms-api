@@ -25,8 +25,22 @@ class SyncScheduler(
         )
     }
 
+    /** No network constraint: the service must come back even before the network does. */
+    fun scheduleWatchdog() {
+        val request = PeriodicWorkRequestBuilder<GatewayWatchdogWorker>(
+            GatewayWatchdogWorker.INTERVAL_MINUTES,
+            TimeUnit.MINUTES,
+        ).build()
+        workManager.enqueueUniquePeriodicWork(
+            UNIQUE_WATCHDOG,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
     companion object {
         const val UNIQUE_PERIODIC_SYNC = "periodic_sms_sync"
+        const val UNIQUE_WATCHDOG = "gateway_watchdog"
     }
 }
 

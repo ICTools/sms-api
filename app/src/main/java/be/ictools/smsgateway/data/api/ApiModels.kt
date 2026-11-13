@@ -41,3 +41,12 @@ data class MessageStatusRequest(
 data class MercureEnvelope(
     @SerialName("ulid") val ulid: String,
 )
+
+/** Body of POST /api/mobile/heartbeat (chapitreneuf#936); every field is optional server side. */
+@Serializable
+data class HeartbeatRequest(
+    @SerialName("batteryLevel") val batteryLevel: Int? = null,
+    @SerialName("charging") val charging: Boolean? = null,
+    @SerialName("network") val network: String? = null,
+    @SerialName("appVersion") val appVersion: String? = null,
+)

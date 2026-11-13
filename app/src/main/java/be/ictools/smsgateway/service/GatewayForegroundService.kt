@@ -13,20 +13,25 @@ import androidx.core.app.NotificationCompat
 import be.ictools.smsgateway.MainActivity
 import be.ictools.smsgateway.R
 import be.ictools.smsgateway.SmsGatewayApp
+import be.ictools.smsgateway.data.heartbeat.HeartbeatReporter
 import be.ictools.smsgateway.domain.SseState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 
 class GatewayForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createChannel()
         val app = application as SmsGatewayApp
         startInForeground(buildNotification(SseState.Idle))
@@ -36,10 +41,19 @@ class GatewayForegroundService : Service() {
                 refreshNotification(state)
             }
         }
+        heartbeatJob = scope.launch {
+            while (isActive) {
+                // A failed beat must never end the loop (or crash the service).
+                runCatching { app.appContainer.heartbeatReporter.send() }
+                delay(HeartbeatReporter.INTERVAL_MS)
+            }
+        }
     }
 
     override fun onDestroy() {
+        isRunning = false
         stateJob?.cancel()
+        heartbeatJob?.cancel()
         scope.cancel()
         (application as SmsGatewayApp).appContainer.sseClient.stop()
         super.onDestroy()
@@ -50,11 +64,13 @@ class GatewayForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startInForeground(notification: Notification) {
-        startForeground(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-        )
+        // remoteMessaging (API 34+) may start from BOOT_COMPLETED and has no daily time limit,
+        // unlike dataSync on Android 15+. Older versions take the type from the manifest.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun refreshNotification(state: SseState) {
@@ -106,6 +122,11 @@ class GatewayForegroundService : Service() {
     }
 
     companion object {
+        /** Read by the watchdog; false again when the process dies, which also means stopped. */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
         private const val CHANNEL_ID = "sms_gateway_sync"
         private const val NOTIFICATION_ID = 1001
     }

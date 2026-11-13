@@ -7,6 +7,7 @@ import be.ictools.smsgateway.BuildConfig
 import be.ictools.smsgateway.data.api.GatewayApi
 import be.ictools.smsgateway.data.auth.AuthRepository
 import be.ictools.smsgateway.data.auth.SessionStore
+import be.ictools.smsgateway.data.heartbeat.HeartbeatReporter
 import be.ictools.smsgateway.data.local.GatewayDatabase
 import be.ictools.smsgateway.data.repository.MessageRepository
 import be.ictools.smsgateway.data.sse.MercureSseClient
@@ -61,5 +62,6 @@ class AppContainer(context: Context) {
         authRepository = authRepository,
         repository = repository,
     )
-    val syncScheduler = SyncScheduler(WorkManager.getInstance(appContext))
+    val heartbeatReporter = HeartbeatReporter(appContext, api, sessionStore)
+    val syncScheduler =SyncScheduler(WorkManager.getInstance(appContext))
 }

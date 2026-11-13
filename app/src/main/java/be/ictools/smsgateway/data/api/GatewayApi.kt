@@ -67,6 +67,17 @@ class GatewayApi(
         }
     }
 
+    suspend fun sendHeartbeat(payload: HeartbeatRequest): Result<Unit> = withAuthorizedCall {
+        val request = Request.Builder()
+            .url(baseUrlBuilder().addPathSegments("api/mobile/heartbeat").build())
+            .post(json.encodeToString(HeartbeatRequest.serializer(), payload).toRequestBody(mediaType))
+            .authorized()
+            .build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw HttpException(response.code, "Heartbeat failed: ${response.code}")
+        }
+    }
+
     fun buildMercureUrl(): HttpUrl? {
         val config = sessionStore.read()
         return config.baseUrl.toHttpUrlOrNull()

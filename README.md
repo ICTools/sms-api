@@ -21,8 +21,8 @@ app/src/main/java/be/ictools/smsgateway/
 ├── data/        api · sse (Mercure) · auth · local (Room) · repository
 ├── sms/         DeviceSmsGateway — envoi/réception SMS réels
 ├── receiver/    SmsReceived/Sent/Delivered + BootCompleted
-├── worker/      SyncScheduler + SyncPendingMessagesWorker
-├── service/     GatewayForegroundService (connexion persistante)
+├── worker/      SyncScheduler + SyncPendingMessagesWorker + GatewayWatchdogWorker
+├── service/     GatewayForegroundService (connexion persistante, heartbeat)
 ├── ui/          écrans Compose + GatewayViewModel
 └── domain/      Models, SseState
 ```
@@ -46,8 +46,20 @@ Détail complet (keystore, signature, adb réseau, mise à jour) :
 ## Configuration (premier lancement)
 
 1. Accepter les permissions : SMS (envoyer/recevoir/lire) + Notifications.
-2. Renseigner `Base URL`, `API key`, `API secret` → **Enregistrer & connecter**.
-3. La carte d'état doit afficher `Connectée` après quelques secondes.
+2. Autoriser l'appli à ignorer l'optimisation de batterie (boîte affichée au
+   lancement) : sans elle, Doze coupe le flux et le watchdog ne peut pas
+   relancer le service.
+3. Renseigner `Base URL`, `API key`, `API secret` → **Enregistrer & connecter**.
+   La clé doit avoir le scope **`sms_gateway`** (une clé `global` reçoit `403`
+   sur le heartbeat).
+4. La carte d'état doit afficher `Connectée` et `Heartbeat: OK` après quelques
+   secondes.
+
+Une fois enregistrés, le secret n'est plus jamais affiché (« Secret configuré
+✓ ») et la clé est masquée ; les modifier demande le verrouillage de
+l'appareil. La passerelle redémarre seule après un redémarrage du téléphone,
+une mise à jour de l'APK ou un arrêt par le système (watchdog 15 min). Test
+manuel : [`docs/auto-restart-manual-test.md`](docs/auto-restart-manual-test.md).
 
 Le serveur doit exposer `POST /api/authentication_token` (échange clé/secret →
 JWT), les endpoints `/api/mobile/...` et Mercure sur `/.well-known/mercure`.
