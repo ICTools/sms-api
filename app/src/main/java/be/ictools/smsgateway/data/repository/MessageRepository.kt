@@ -13,6 +13,7 @@ import be.ictools.smsgateway.data.api.HttpException
 import be.ictools.smsgateway.data.api.IncomingMessageRequest
 import be.ictools.smsgateway.data.api.MessageStatusRequest
 import be.ictools.smsgateway.data.api.OutgoingMessageRequest
+import be.ictools.smsgateway.data.auth.CredentialMask
 import be.ictools.smsgateway.data.auth.SessionStore
 import be.ictools.smsgateway.data.local.GatewayDatabase
 import be.ictools.smsgateway.data.local.entity.ConversationEntity
@@ -68,10 +69,12 @@ class MessageRepository(
     fun observePendingActionCount(): Flow<Int> =
         database.pendingActionDao().observeCount()
 
+    /** Blank key or secret inputs keep the stored values (see [CredentialMask.resolveInput]). */
     suspend fun saveSettings(baseUrl: String, apiKey: String, apiSecret: String) {
+        val stored = sessionStore.read()
         sessionStore.saveBaseUrl(baseUrl)
-        sessionStore.saveApiKey(apiKey)
-        sessionStore.saveApiSecret(apiSecret)
+        sessionStore.saveApiKey(CredentialMask.resolveInput(apiKey, stored.apiKey))
+        sessionStore.saveApiSecret(CredentialMask.resolveInput(apiSecret, stored.apiSecret))
         sessionStore.clearJwt()
     }
 

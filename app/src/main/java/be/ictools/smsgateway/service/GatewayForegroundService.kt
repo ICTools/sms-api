@@ -24,9 +24,11 @@ import kotlinx.coroutines.Dispatchers
 class GatewayForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createChannel()
         val app = application as SmsGatewayApp
         startInForeground(buildNotification(SseState.Idle))
@@ -36,25 +38,53 @@ class GatewayForegroundService : Service() {
                 refreshNotification(state)
             }
         }
+        // Next beats come from HeartbeatAlarm, which wakes the CPU; delay() would stall in sleep.
+        HeartbeatAlarm.schedule(this)
+        sendHeartbeat()
+    }
+
+    private fun sendHeartbeat() {
+        if (heartbeatJob?.isActive == true) {
+            // The previous beat is still in flight; it releases the wake lock when done.
+            return
+        }
+        val app = application as SmsGatewayApp
+        heartbeatJob = scope.launch {
+            try {
+                // A failed beat must never crash the service.
+                runCatching { app.appContainer.heartbeatReporter.send() }
+            } finally {
+                HeartbeatWakeLock.release()
+            }
+        }
     }
 
     override fun onDestroy() {
+        isRunning = false
+        HeartbeatAlarm.cancel(this)
         stateJob?.cancel()
+        heartbeatJob?.cancel()
+        HeartbeatWakeLock.release()
         scope.cancel()
         (application as SmsGatewayApp).appContainer.sseClient.stop()
         super.onDestroy()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_HEARTBEAT) sendHeartbeat()
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startInForeground(notification: Notification) {
-        startForeground(
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-        )
+        // remoteMessaging (API 34+) may start from BOOT_COMPLETED and has no daily time limit,
+        // unlike dataSync on Android 15+. Older versions take the type from the manifest.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun refreshNotification(state: SseState) {
@@ -106,6 +136,14 @@ class GatewayForegroundService : Service() {
     }
 
     companion object {
+        /** Read by the watchdog; false again when the process dies, which also means stopped. */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
+        /** Sent by HeartbeatAlarmReceiver, which holds HeartbeatWakeLock until the beat is sent. */
+        const val ACTION_HEARTBEAT = "be.ictools.smsgateway.action.SEND_HEARTBEAT"
+
         private const val CHANNEL_ID = "sms_gateway_sync"
         private const val NOTIFICATION_ID = 1001
     }

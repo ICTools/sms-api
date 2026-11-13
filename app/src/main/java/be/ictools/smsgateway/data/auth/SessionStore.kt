@@ -11,7 +11,31 @@ data class ServerConfig(
     val apiKey: String = "",
     val apiSecret: String = "",
     val jwt: String = "",
-)
+) {
+    val isComplete: Boolean get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && apiSecret.isNotBlank()
+
+    /** Everything the UI may show: the key masked, the secret only as present/absent. */
+    fun toDisplay(): CredentialsDisplay = CredentialsDisplay(
+        baseUrl = baseUrl,
+        maskedApiKey = CredentialMask.maskApiKey(apiKey),
+        hasApiKey = apiKey.isNotBlank(),
+        hasSecret = apiSecret.isNotBlank(),
+        hasJwt = jwt.isNotBlank(),
+    )
+
+    // The secret, key and JWT must never reach logs through the data class toString().
+    override fun toString(): String = "ServerConfig(baseUrl=$baseUrl, ${toDisplay()})"
+}
+
+data class CredentialsDisplay(
+    val baseUrl: String = "",
+    val maskedApiKey: String = "",
+    val hasApiKey: Boolean = false,
+    val hasSecret: Boolean = false,
+    val hasJwt: Boolean = false,
+) {
+    val hasStoredCredentials: Boolean get() = hasApiKey || hasSecret
+}
 
 class SessionStore(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(
@@ -28,6 +52,20 @@ class SessionStore(context: Context) {
         apiSecret = prefs.getString(KEY_API_SECRET, "").orEmpty(),
         jwt = prefs.getString(KEY_JWT, "").orEmpty(),
     )
+
+    fun isConfigured(): Boolean = read().isComplete
+
+    /** What the configuration screen may show; never the secret itself. */
+    fun display(): CredentialsDisplay = read().toDisplay()
+
+    /** Forgets the credentials and the JWT; the base URL is kept, it is not secret. */
+    fun clearCredentials() {
+        prefs.edit {
+            remove(KEY_API_KEY)
+            remove(KEY_API_SECRET)
+            remove(KEY_JWT)
+        }
+    }
 
     fun saveBaseUrl(baseUrl: String) {
         prefs.edit { putString(KEY_BASE_URL, baseUrl.trimEnd('/')) }

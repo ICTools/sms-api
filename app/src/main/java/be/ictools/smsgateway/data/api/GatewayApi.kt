@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 class HttpException(val code: Int, message: String) : RuntimeException(message)
 
@@ -21,6 +22,11 @@ class GatewayApi(
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val mediaType = "application/json".toMediaType()
+
+    // A heartbeat runs under a bounded wake lock: give up well before it expires.
+    private val heartbeatClient by lazy {
+        okHttpClient.newBuilder().callTimeout(HEARTBEAT_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS).build()
+    }
 
     suspend fun fetchRemoteMessage(ulid: String): Result<RemoteMessageDto> = withAuthorizedCall {
         val url = baseUrlBuilder()
@@ -67,6 +73,17 @@ class GatewayApi(
         }
     }
 
+    suspend fun sendHeartbeat(payload: HeartbeatRequest): Result<Unit> = withAuthorizedCall {
+        val request = Request.Builder()
+            .url(baseUrlBuilder().addPathSegments("api/mobile/heartbeat").build())
+            .post(json.encodeToString(HeartbeatRequest.serializer(), payload).toRequestBody(mediaType))
+            .authorized()
+            .build()
+        heartbeatClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw HttpException(response.code, "Heartbeat failed: ${response.code}")
+        }
+    }
+
     fun buildMercureUrl(): HttpUrl? {
         val config = sessionStore.read()
         return config.baseUrl.toHttpUrlOrNull()
@@ -97,5 +114,10 @@ class GatewayApi(
     private suspend fun Request.Builder.authorized(): Request.Builder {
         val jwt = authRepository.ensureJwt().getOrThrow()
         return header("Authorization", "Bearer $jwt")
+    }
+
+    companion object {
+        /** Below HeartbeatWakeLock.TIMEOUT_MS, with room for one JWT refresh after a 401. */
+        const val HEARTBEAT_CALL_TIMEOUT_MS = 20_000L
     }
 }

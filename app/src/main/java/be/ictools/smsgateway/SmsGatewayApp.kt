@@ -14,6 +14,7 @@ class SmsGatewayApp : Application(), Configuration.Provider {
         super.onCreate()
         appContainer = AppContainer(this)
         appContainer.syncScheduler.schedulePeriodicSync()
+        appContainer.syncScheduler.scheduleWatchdog()
         GatewayServiceLauncher.start(this)
     }
 
