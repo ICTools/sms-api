@@ -40,9 +40,22 @@ class GatewayForegroundService : Service() {
         }
         // Next beats come from HeartbeatAlarm, which wakes the CPU; delay() would stall in sleep.
         HeartbeatAlarm.schedule(this)
+        sendHeartbeat()
+    }
+
+    private fun sendHeartbeat() {
+        if (heartbeatJob?.isActive == true) {
+            // The previous beat is still in flight; it releases the wake lock when done.
+            return
+        }
+        val app = application as SmsGatewayApp
         heartbeatJob = scope.launch {
-            // A failed beat must never crash the service.
-            runCatching { app.appContainer.heartbeatReporter.send() }
+            try {
+                // A failed beat must never crash the service.
+                runCatching { app.appContainer.heartbeatReporter.send() }
+            } finally {
+                HeartbeatWakeLock.release()
+            }
         }
     }
 
@@ -51,12 +64,16 @@ class GatewayForegroundService : Service() {
         HeartbeatAlarm.cancel(this)
         stateJob?.cancel()
         heartbeatJob?.cancel()
+        HeartbeatWakeLock.release()
         scope.cancel()
         (application as SmsGatewayApp).appContainer.sseClient.stop()
         super.onDestroy()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_HEARTBEAT) sendHeartbeat()
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -123,6 +140,9 @@ class GatewayForegroundService : Service() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        /** Sent by HeartbeatAlarmReceiver, which holds HeartbeatWakeLock until the beat is sent. */
+        const val ACTION_HEARTBEAT = "be.ictools.smsgateway.action.SEND_HEARTBEAT"
 
         private const val CHANNEL_ID = "sms_gateway_sync"
         private const val NOTIFICATION_ID = 1001

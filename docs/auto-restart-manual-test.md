@@ -16,9 +16,12 @@ connecté (USB ou réseau, voir [`build-and-install.md`](build-and-install.md)).
   l'exemption d'optimisation de batterie, demandée au premier lancement.
 - Le service envoie un heartbeat toutes les 4 min
   ([contrat](server-integration.md#heartbeat)). Chaque envoi est déclenché par
-  une alarme `ELAPSED_REALTIME_WAKEUP` (`HeartbeatAlarm`, autorisée en Doze) qui
-  réveille le CPU et prend un wakelock partiel de 60 s au plus : un simple
-  `delay()` s'arrête quand le CPU dort et dépasserait le seuil de 10 min.
+  une alarme exacte `ELAPSED_REALTIME_WAKEUP` (`HeartbeatAlarm`, autorisée en
+  Doze, permission `USE_EXACT_ALARM`) qui réveille le CPU ; le récepteur prend
+  un wakelock partiel de 60 s au plus et confie l'envoi au service (appel HTTP
+  borné à 20 s). Un simple `delay()` s'arrête quand le CPU dort et dépasserait
+  le seuil de 10 min. Sans l'exemption batterie, Doze espace ces alarmes d'au
+  moins 9 min sur Android 10-11 : l'exemption est nécessaire.
 
 ## Préparation
 
@@ -76,9 +79,12 @@ de moins de 5 min.
    `adb shell dumpsys deviceidle force-idle`.
 3. Vérifier l'alarme : `adb shell dumpsys alarm | grep -A3 be.ictools.smsgateway`
    montre une alarme `ELAPSED_WAKEUP` sur `HeartbeatAlarmReceiver`, prévue dans
-   moins de 4 min (7 min au pire si les alarmes exactes sont refusées).
+   moins de 4 min. `adb shell dumpsys alarm | grep -i "exact"` ne doit pas
+   montrer le paquet comme privé d'alarmes exactes.
 4. Attendre 15 min sans toucher au téléphone. Attendu : côté serveur, au moins
-   2 heartbeats, jamais plus de 7 min entre deux ; aucune alerte « hors ligne ».
+   3 heartbeats, jamais plus de 5 min entre deux ; aucune alerte « hors ligne ».
+   Un écart de ~9 min signale une alarme inexacte ou l'absence d'exemption
+   batterie : à corriger avant la mise en production.
 5. Remettre l'état normal : `adb shell dumpsys deviceidle unforce` puis
    `adb shell dumpsys battery reset`.
 

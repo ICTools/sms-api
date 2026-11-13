@@ -1,8 +1,9 @@
 package be.ictools.smsgateway
 
+import be.ictools.smsgateway.data.api.GatewayApi
 import be.ictools.smsgateway.data.heartbeat.HeartbeatReporter
-import be.ictools.smsgateway.receiver.HeartbeatAlarmReceiver
 import be.ictools.smsgateway.service.HeartbeatAlarm
+import be.ictools.smsgateway.service.HeartbeatWakeLock
 import be.ictools.smsgateway.ui.GatewayUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,8 +11,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HeartbeatAlarmTest {
-    private val offlineThresholdMs = 10 * 60 * 1000L
-
     @Test
     fun exactBeforeAndroid12AndWhenAllowed() {
         assertEquals(HeartbeatAlarm.Mode.EXACT, HeartbeatAlarm.mode(sdkInt = 29, canScheduleExact = false))
@@ -29,16 +28,35 @@ class HeartbeatAlarmTest {
     }
 
     @Test
-    fun worstCaseDelayStaysBelowOfflineThreshold() {
-        HeartbeatAlarm.Mode.values().forEach { mode ->
-            assertTrue("$mode", HeartbeatAlarm.worstCaseDelayMs(mode) < offlineThresholdMs)
+    fun exactExemptBeatStaysBelowOfflineThreshold() {
+        listOf(29, 30, 31, 34, 36).forEach { sdk ->
+            val worst = HeartbeatAlarm.worstCaseDelayMs(HeartbeatAlarm.Mode.EXACT, sdk, batteryExempt = true)
+            assertEquals("sdk $sdk", HeartbeatReporter.INTERVAL_MS, worst)
         }
     }
 
     @Test
-    fun wakeLockIsBoundedAndOutlastsTheRequest() {
-        assertTrue(HeartbeatAlarmReceiver.SEND_TIMEOUT_MS < HeartbeatAlarmReceiver.WAKE_LOCK_TIMEOUT_MS)
-        assertTrue(HeartbeatAlarmReceiver.WAKE_LOCK_TIMEOUT_MS <= 60_000L)
+    fun dozeSpacesBeatsWithoutExemptionBeforeAndroid12() {
+        assertEquals(
+            HeartbeatAlarm.DOZE_MIN_GAP_MS,
+            HeartbeatAlarm.worstCaseDelayMs(HeartbeatAlarm.Mode.EXACT, sdkInt = 30, batteryExempt = false),
+        )
+        assertEquals(
+            HeartbeatReporter.INTERVAL_MS,
+            HeartbeatAlarm.worstCaseDelayMs(HeartbeatAlarm.Mode.EXACT, sdkInt = 34, batteryExempt = false),
+        )
+    }
+
+    @Test
+    fun inexactFallbackIsSpacedByDozeFromAndroid12() {
+        val worst = HeartbeatAlarm.worstCaseDelayMs(HeartbeatAlarm.Mode.INEXACT, sdkInt = 34, batteryExempt = true)
+        assertTrue(worst >= HeartbeatAlarm.DOZE_MIN_GAP_MS)
+    }
+
+    @Test
+    fun heartbeatCallGivesUpBeforeTheWakeLockExpires() {
+        assertTrue(GatewayApi.HEARTBEAT_CALL_TIMEOUT_MS < HeartbeatWakeLock.TIMEOUT_MS)
+        assertTrue(HeartbeatWakeLock.TIMEOUT_MS <= 60_000L)
     }
 
     @Test

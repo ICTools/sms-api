@@ -20,19 +20,35 @@ object HeartbeatAlarm {
     enum class Mode { EXACT, INEXACT }
 
     /**
-     * Exact when the system lets us (SCHEDULE_EXACT_ALARM, granted by default before Android 13).
-     * Otherwise inexact: Android may deliver it up to 75 % of the delay late, which still stays
-     * below the threshold (see [worstCaseDelayMs]).
+     * Exact when the system lets us: SCHEDULE_EXACT_ALARM up to Android 12L, USE_EXACT_ALARM from
+     * Android 13 (both declared). Inexact is only a fallback if the user revokes the permission.
      */
     fun mode(sdkInt: Int, canScheduleExact: Boolean): Mode =
         if (sdkInt < Build.VERSION_CODES.S || canScheduleExact) Mode.EXACT else Mode.INEXACT
 
     fun triggerAt(nowElapsed: Long): Long = nowElapsed + HeartbeatReporter.INTERVAL_MS
 
-    fun worstCaseDelayMs(mode: Mode): Long = when (mode) {
-        Mode.EXACT -> HeartbeatReporter.INTERVAL_MS
-        Mode.INEXACT -> HeartbeatReporter.INTERVAL_MS * 7 / 4
+    /**
+     * Longest gap between two beats with the screen off, as far as Android documents it. Doze
+     * spaces allow-while-idle alarms at least [DOZE_MIN_GAP_MS] apart before Android 12 unless the
+     * app is exempt from battery optimization, and from Android 12 for inexact alarms; an inexact
+     * alarm may also come up to 75 % of its delay late. Only the exact, exempt case stays at
+     * [HeartbeatReporter.INTERVAL_MS], which is why the app asks for the exemption.
+     */
+    fun worstCaseDelayMs(mode: Mode, sdkInt: Int, batteryExempt: Boolean): Long {
+        val base = when (mode) {
+            Mode.EXACT -> HeartbeatReporter.INTERVAL_MS
+            Mode.INEXACT -> HeartbeatReporter.INTERVAL_MS * 7 / 4
+        }
+        val dozeSpaced = when {
+            mode == Mode.INEXACT && sdkInt >= Build.VERSION_CODES.S -> true
+            sdkInt < Build.VERSION_CODES.S -> !batteryExempt
+            else -> false
+        }
+        return if (dozeSpaced) maxOf(base, DOZE_MIN_GAP_MS) else base
     }
+
+    const val DOZE_MIN_GAP_MS = 9 * 60 * 1000L
 
     fun schedule(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
