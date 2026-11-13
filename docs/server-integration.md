@@ -75,7 +75,9 @@ Le contrôleur serveur mentionné est :
 ## Heartbeat
 
 Le service de la passerelle envoie un heartbeat au démarrage puis toutes les
-**4 minutes** (`HeartbeatReporter.INTERVAL_MS`). Côté serveur
+**4 minutes** (`HeartbeatReporter.INTERVAL_MS`), déclenché par une alarme
+`ELAPSED_REALTIME_WAKEUP` qui réveille le CPU même écran éteint (`HeartbeatAlarm`,
+exacte si Android l'autorise, sinon au plus ~7 min). Côté serveur
 (ICTools/chapitreneuf#936), l'alerte e-mail « Passerelle SMS hors ligne » part
 quand le dernier heartbeat a plus de `SMS_GATEWAY_OFFLINE_THRESHOLD_MINUTES`
 (10 par défaut) ou quand plus personne n'est abonné au topic Mercure

@@ -15,7 +15,10 @@ connecté (USB ou réseau, voir [`build-and-install.md`](build-and-install.md)).
   tourne plus. Démarrer un service de premier plan depuis l'arrière-plan exige
   l'exemption d'optimisation de batterie, demandée au premier lancement.
 - Le service envoie un heartbeat toutes les 4 min
-  ([contrat](server-integration.md#heartbeat)).
+  ([contrat](server-integration.md#heartbeat)). Chaque envoi est déclenché par
+  une alarme `ELAPSED_REALTIME_WAKEUP` (`HeartbeatAlarm`, autorisée en Doze) qui
+  réveille le CPU et prend un wakelock partiel de 60 s au plus : un simple
+  `delay()` s'arrête quand le CPU dort et dépasserait le seuil de 10 min.
 
 ## Préparation
 
@@ -66,7 +69,20 @@ Laisser tourner une nuit, écran éteint. Le lendemain : aucune alerte
 « hors ligne » reçue, `/admin/sms` toujours « connectée », dernier heartbeat
 de moins de 5 min.
 
-## 5. Identifiants masqués
+## 5. Heartbeat écran éteint (Doze)
+
+1. Débrancher le téléphone, éteindre l'écran.
+2. Forcer Doze : `adb shell dumpsys battery unplug` puis
+   `adb shell dumpsys deviceidle force-idle`.
+3. Vérifier l'alarme : `adb shell dumpsys alarm | grep -A3 be.ictools.smsgateway`
+   montre une alarme `ELAPSED_WAKEUP` sur `HeartbeatAlarmReceiver`, prévue dans
+   moins de 4 min (7 min au pire si les alarmes exactes sont refusées).
+4. Attendre 15 min sans toucher au téléphone. Attendu : côté serveur, au moins
+   2 heartbeats, jamais plus de 7 min entre deux ; aucune alerte « hors ligne ».
+5. Remettre l'état normal : `adb shell dumpsys deviceidle unforce` puis
+   `adb shell dumpsys battery reset`.
+
+## 6. Identifiants masqués
 
 1. Écran Config : la clé s'affiche masquée (`01M6YB…XKV`), le secret
    uniquement comme « Secret configuré ✓ ».

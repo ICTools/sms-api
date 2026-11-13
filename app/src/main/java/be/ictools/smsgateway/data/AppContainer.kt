@@ -63,5 +63,5 @@ class AppContainer(context: Context) {
         repository = repository,
     )
     val heartbeatReporter = HeartbeatReporter(appContext, api, sessionStore)
-    val syncScheduler =SyncScheduler(WorkManager.getInstance(appContext))
+    val syncScheduler = SyncScheduler(WorkManager.getInstance(appContext))
 }

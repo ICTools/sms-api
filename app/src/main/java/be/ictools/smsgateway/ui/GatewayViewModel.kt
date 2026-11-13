@@ -35,7 +35,17 @@ data class GatewayUiState(
     val permissionsDenied: Boolean = false,
     val batteryOptimized: Boolean = false,
     val heartbeat: HeartbeatState = HeartbeatState.Never,
-)
+) {
+    // Logs and crash reports must not carry what the user is typing as credentials.
+    override fun toString(): String =
+        "GatewayUiState(connection=$connection, conversations=${conversations.size}, " +
+            "selectedAddress=$selectedAddress, credentials=$credentials, baseUrlInput=$baseUrlInput, " +
+            "apiKeyInput=${redact(apiKeyInput)}, apiSecretInput=${redact(apiSecretInput)}, " +
+            "editUnlocked=$editUnlocked, permissionsDenied=$permissionsDenied, " +
+            "batteryOptimized=$batteryOptimized, heartbeat=$heartbeat)"
+
+    private fun redact(value: String): String = if (value.isEmpty()) "" else "<redacted>"
+}
 
 class GatewayViewModel(
     private val appContainer: AppContainer,

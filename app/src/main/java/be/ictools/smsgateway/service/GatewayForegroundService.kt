@@ -13,14 +13,11 @@ import androidx.core.app.NotificationCompat
 import be.ictools.smsgateway.MainActivity
 import be.ictools.smsgateway.R
 import be.ictools.smsgateway.SmsGatewayApp
-import be.ictools.smsgateway.data.heartbeat.HeartbeatReporter
 import be.ictools.smsgateway.domain.SseState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 
@@ -41,17 +38,17 @@ class GatewayForegroundService : Service() {
                 refreshNotification(state)
             }
         }
+        // Next beats come from HeartbeatAlarm, which wakes the CPU; delay() would stall in sleep.
+        HeartbeatAlarm.schedule(this)
         heartbeatJob = scope.launch {
-            while (isActive) {
-                // A failed beat must never end the loop (or crash the service).
-                runCatching { app.appContainer.heartbeatReporter.send() }
-                delay(HeartbeatReporter.INTERVAL_MS)
-            }
+            // A failed beat must never crash the service.
+            runCatching { app.appContainer.heartbeatReporter.send() }
         }
     }
 
     override fun onDestroy() {
         isRunning = false
+        HeartbeatAlarm.cancel(this)
         stateJob?.cancel()
         heartbeatJob?.cancel()
         scope.cancel()
